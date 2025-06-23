@@ -94,18 +94,15 @@ def run_classifier(df):
 
     median = df['TOTAL_UNIT_(UPPCL+DG)'].median()
     y = (df['TOTAL_UNIT_(UPPCL+DG)'] > median).astype(int)
-    
+
     X = df.select_dtypes(include=np.number).drop(columns=['TOTAL_UNIT_(UPPCL+DG)'], errors='ignore')
-    
-    from sklearn.impute import SimpleImputer
-    imputer = SimpleImputer(strategy="mean")
-    X_imputed = imputer.fit_transform(X)
+    X = X.fillna(X.mean())  # ✅ Fix NaNs
 
     model = LogisticRegression()
-    model.fit(X_imputed, y)
-    preds = model.predict(X_imputed)
-
+    model.fit(X, y)
+    preds = model.predict(X)
     return classification_report(y, preds)
+
 
 
 def analyze_downtime(df):
@@ -121,12 +118,25 @@ def analyze_correlation(df, numeric_cols):
 def summarize_eda(df):
     try:
         from ydata_profiling import ProfileReport
-        df_sample = df.sample(n=500, random_state=42) if len(df) > 500 else df
-        profile = ProfileReport(df_sample, title="EDA Report", minimal=True)
+
+        # Sample data to reduce memory usage on large datasets
+        sample_df = df.sample(n=min(1000, len(df)), random_state=42)
+
+        # Minimal and optimized configuration
+        profile = ProfileReport(
+            sample_df,
+            title="📊 EDA Report",
+            minimal=True,
+            explorative=False,
+            correlations={"pearson": {"calculate": False}},  # skip correlation matrix
+            progress_bar=False,
+            pool_size=1,  # single-threaded to reduce memory
+        )
+
         return profile.to_html()
     except Exception as e:
-        print(f"EDA generation failed: {e}")
-        return "<b>Failed to generate EDA.</b>"
+        return f"<b>❌ Failed to generate EDA Report: {e}</b>"
+
 
 def generate_monthly_insights(df, numeric_cols):
     months = df['MONTH'].unique()
