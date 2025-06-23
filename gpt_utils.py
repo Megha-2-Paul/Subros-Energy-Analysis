@@ -2,16 +2,25 @@
 
 import openai
 import streamlit as st
+import os
 
-openai.api_key = st.secrets["OPENAI_API_KEY"]
+# Use secret if available, otherwise try environment variable
+openai.api_key = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY"))
+
+if not openai.api_key:
+    st.warning("⚠️ OpenAI API key not found. GPT-based insights will be skipped.")
 
 def generate_section_insight(section, data_snippet):
+    if not openai.api_key:
+        return "⚠️ Skipped: No API key found."
+
     try:
         prompt = f"""
         You are an expert energy analyst. Analyze this dashboard section: {section}.
         Data Sample:
         {data_snippet}
-        Give 3-5 bullet points of key findings, patterns, anomalies, or recommendations.Also keep the description short and crisp in easy language.
+        Give 3-5 bullet points of key findings, patterns, anomalies, or recommendations.
+        Keep the language simple and insights crisp.
         """
         response = openai.chat.completions.create(
             model="gpt-4o",
@@ -21,6 +30,7 @@ def generate_section_insight(section, data_snippet):
             ]
         )
         return response.choices[0].message.content.strip()
+
     except Exception as e:
         return f"⚠️ GPT failed: {e}"
 
