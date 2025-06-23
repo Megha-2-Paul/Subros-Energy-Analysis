@@ -9,7 +9,7 @@ from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.metrics import classification_report, r2_score
 from sklearn.cluster import KMeans
 from statsmodels.tsa.arima.model import ARIMA
-import shap
+#import shap
 import base64
 from datetime import datetime
 from io import BytesIO
