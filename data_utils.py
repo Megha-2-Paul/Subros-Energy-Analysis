@@ -119,23 +119,24 @@ def summarize_eda(df):
     try:
         from ydata_profiling import ProfileReport
 
-        # Sample data to reduce memory usage on large datasets
         sample_df = df.sample(n=min(1000, len(df)), random_state=42)
 
-        # Minimal and optimized configuration
         profile = ProfileReport(
             sample_df,
             title="📊 EDA Report",
             minimal=True,
             explorative=False,
-            correlations={"pearson": {"calculate": False}},  # skip correlation matrix
+            correlations={"pearson": {"calculate": False}},
             progress_bar=False,
-            pool_size=1,  # single-threaded to reduce memory
+            pool_size=1,
         )
 
         return profile.to_html()
+    except ImportError:
+        return "<b>⚠️ ydata_profiling is not installed.</b>"
     except Exception as e:
         return f"<b>❌ Failed to generate EDA Report: {e}</b>"
+
 
 
 def generate_monthly_insights(df, numeric_cols):
