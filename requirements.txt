@@ -11,3 +11,4 @@ seaborn
 shap>=0.45.0
 jinja2
 openai>=1.0
+ydata-profiling==4.16.1
