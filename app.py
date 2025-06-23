@@ -144,18 +144,18 @@ if uploaded_files:
         except:
             st.warning("Anomaly detection failed.")
 
-        st.subheader("🔍 SHAP Explainability (Random Forest)")
-        try:
-            if all(col in filtered_df.columns for col in ['DG_UNIT', 'UPPCL_(UNIT_)', 'TOTAL_UNIT_(UPPCL+DG)']):
-                X = filtered_df[['DG_UNIT', 'UPPCL_(UNIT_)']]
-                y = filtered_df['TOTAL_UNIT_(UPPCL+DG)']
-                rf = RandomForestRegressor().fit(X, y)
-                explainer = shap.Explainer(rf, X)
-                shap_values = explainer(X)
-                st.set_option('deprecation.showPyplotGlobalUse', False)
-                st.pyplot(shap.plots.beeswarm(shap_values, show=False))
-        except:
-            st.warning("SHAP explanation failed.")
+        # st.subheader("🔍 SHAP Explainability (Random Forest)")
+        # try:
+        #     if all(col in filtered_df.columns for col in ['DG_UNIT', 'UPPCL_(UNIT_)', 'TOTAL_UNIT_(UPPCL+DG)']):
+        #         X = filtered_df[['DG_UNIT', 'UPPCL_(UNIT_)']]
+        #         y = filtered_df['TOTAL_UNIT_(UPPCL+DG)']
+        #         rf = RandomForestRegressor().fit(X, y)
+        #         explainer = shap.Explainer(rf, X)
+        #         shap_values = explainer(X)
+        #         st.set_option('deprecation.showPyplotGlobalUse', False)
+        #         st.pyplot(shap.plots.beeswarm(shap_values, show=False))
+        # except:
+        #     st.warning("SHAP explanation failed.")
 
         st.subheader("🔀 KMeans Clustering")
         try:
