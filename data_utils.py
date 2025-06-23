@@ -6,7 +6,6 @@ import numpy as np
 from sklearn.ensemble import IsolationForest
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report
-from ydata_profiling import ProfileReport
 import dtale
 import sweetviz
 
@@ -115,27 +114,36 @@ def analyze_downtime(df):
 def analyze_correlation(df, numeric_cols):
     return df[numeric_cols].corr().round(2)
 
+import io
+import matplotlib.pyplot as plt
+import seaborn as sns
+import plotly.express as px
+
 def summarize_eda(df):
-    try:
-        from ydata_profiling import ProfileReport
+    eda_summary = ""
 
-        sample_df = df.sample(n=min(1000, len(df)), random_state=42)
+    # Shape and nulls
+    eda_summary += f"**Rows:** {df.shape[0]}\n\n"
+    eda_summary += f"**Columns:** {df.shape[1]}\n\n"
+    eda_summary += f"**Missing Values:**\n{df.isnull().sum().sort_values(ascending=False).head(10).to_string()}\n\n"
 
-        profile = ProfileReport(
-            sample_df,
-            title="📊 EDA Report",
-            minimal=True,
-            explorative=False,
-            correlations={"pearson": {"calculate": False}},
-            progress_bar=False,
-            pool_size=1,
-        )
+    # Dtypes
+    eda_summary += f"**Column Types:**\n{df.dtypes.value_counts().to_string()}\n\n"
 
-        return profile.to_html()
-    except ImportError:
-        return "<b>⚠️ ydata_profiling is not installed.</b>"
-    except Exception as e:
-        return f"<b>❌ Failed to generate EDA Report: {e}</b>"
+    # Top 5 numerical
+    num_cols = df.select_dtypes(include='number').columns.tolist()
+    if num_cols:
+        desc = df[num_cols].describe().T
+        eda_summary += f"**Numeric Summary:**\n{desc[['mean', 'std', 'min', 'max']].to_string()}\n\n"
+
+    # Top 5 categorical
+    cat_cols = df.select_dtypes(include='object').columns.tolist()
+    if cat_cols:
+        for col in cat_cols[:5]:
+            top_vals = df[col].value_counts().head(3)
+            eda_summary += f"**Top values in {col}**:\n{top_vals.to_string()}\n\n"
+
+    return eda_summary
 
 
 

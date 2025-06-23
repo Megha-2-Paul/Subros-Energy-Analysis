@@ -1,6 +1,5 @@
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 import plotly.express as px
 
 from data_utils import (
@@ -13,7 +12,7 @@ from data_utils import (
     generate_monthly_insights
 )
 from time_series_utils import generate_forecast, decompose_and_plot
-from gpt_utils import generate_section_insight, generate_full_report
+from gpt_utils import generate_section_insight
 from insights_export import download_report_button
 from advanced_modules import run_kmeans_visualization
 
@@ -53,15 +52,12 @@ if uploaded_files:
 
     if show_energy:
         st.subheader("📍 Key Energy KPIs")
-
         df['DG_UNIT'] = pd.to_numeric(df['DG_UNIT'], errors='coerce')
         df['TOTAL_UNIT_(UPPCL+DG)'] = pd.to_numeric(df['TOTAL_UNIT_(UPPCL+DG)'], errors='coerce')
-
         if 'DG_UNIT' in df.columns and 'TOTAL_UNIT_(UPPCL+DG)' in df.columns:
             total = df['TOTAL_UNIT_(UPPCL+DG)'].sum()
             dg = df['DG_UNIT'].sum()
             share = (dg / total) * 100 if total else 0
-
             st.metric("DG Share %", f"{share:.2f}%")
             insight = generate_section_insight("Energy KPIs", f"DG Share: {share:.2f}%")
             st.markdown("**📝 Summary:** " + insight)
@@ -133,7 +129,6 @@ if uploaded_files:
 
     if show_eda:
         st.subheader("📊 Exploratory Data Analysis (EDA)")
-
         with st.expander("📈 Descriptive Statistics"):
             st.dataframe(df[numeric_cols].describe().T)
 
@@ -143,19 +138,15 @@ if uploaded_files:
                 st.markdown(f"### 🔹 {month}")
                 st.dataframe(month_df[numeric_cols].describe().T)
 
-        with st.expander("🧠 Full Profiling Report (Optional)"):
-            if len(df) < 20000:  # Prevents Streamlit Cloud crash
-                eda_html = summarize_eda(df)
-                components.html(eda_html, height=700, scrolling=True)
-            else:
-                st.warning("Data too large for full profiling. Try filtering or summarizing.")
+        with st.expander("🧠 EDA Summary Text"):
+            eda_text = summarize_eda(df)
+            st.text(eda_text)
 
         insight = generate_section_insight("EDA", "Exploratory analysis of the dataset")
         st.markdown("**📝 Summary:** " + insight)
         all_insights.append(("EDA", insight))
 
     view_option = st.radio("Choose Analysis View", ["Overall", "Monthly"], horizontal=True)
-
     if view_option == "Overall":
         st.subheader("📊 Overall Analysis")
         st.dataframe(df[numeric_cols].describe().T)
