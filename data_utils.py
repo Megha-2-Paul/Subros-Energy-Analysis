@@ -1,156 +1,91 @@
 import pandas as pd
-import streamlit as st
 import numpy as np
 from sklearn.ensemble import IsolationForest
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report
-import io
-import matplotlib.pyplot as plt
-import seaborn as sns
-import plotly.express as px
-
-# === Column Handling ===
+import streamlit as st
 
 def fix_duplicate_columns(df):
     seen = {}
-    new_cols = []
-    for col in df.columns:
-        base = str(col).strip().upper().replace(" ", "_").replace("%", "PERCENT")
-        if base in seen:
-            seen[base] += 1
-            new_cols.append(f"{base}_{seen[base]}")
-        else:
-            seen[base] = 0
-            new_cols.append(base)
-    df.columns = new_cols
+    new = []
+    for c in df.columns:
+        b = str(c).strip().upper().replace(" ", "_").replace("%", "PERCENT")
+        new.append(b + f"_{seen[b]}" if b in seen else b)
+        seen[b] = seen.get(b, 0) + 1
+    df.columns = new
     return df
 
 def standardize_columns(df):
-    column_map = {
-        "DG_POWER": "DG_UNIT",
-        "DG_(UNIT)": "DG_UNIT",
-        "TOTAL": "TOTAL_UNIT_(UPPCL+DG)",
-        "UPPCL_POWER": "UPPCL_(UNIT_)",
-        "UPPCL_(UNIT)": "UPPCL_(UNIT_)",
-    }
-    df.rename(columns={k: v for k, v in column_map.items() if k in df.columns}, inplace=True)
-    return df
+    m = {"DG_POWER":"DG_UNIT","DG_(UNIT)":"DG_UNIT",
+         "TOTAL":"TOTAL_UNIT_(UPPCL+DG)",
+         "UPPCL_POWER":"UPPCL_(UNIT_)","UPPCL_(UNIT)":"UPPCL_(UNIT_)"}
+    return df.rename(columns={k:v for k,v in m.items() if k in df})
 
-# === Data Loading ===
-
-def extract_df_from_excel(uploaded_file):
+def extract_df_from_excel(f):
     try:
-        xls = pd.ExcelFile(uploaded_file, engine='openpyxl')
-        for sheet_name in xls.sheet_names:
-            sheet_df = xls.parse(sheet_name, header=None, nrows=10)
-            for i in range(10):
-                if sheet_df.iloc[i].astype(str).str.upper().str.contains("DATE").any():
-                    df = xls.parse(sheet_name, skiprows=i)
-                    return df
-        return xls.parse(xls.sheet_names[0])
-    except Exception:
+        x = pd.ExcelFile(f, engine="openpyxl")
+        for sheet in x.sheet_names:
+            hdr = x.parse(sheet, header=None, nrows=8)
+            for i in range(len(hdr)):
+                if hdr.iloc[i].astype(str).str.contains("DATE", case=False).any():
+                    return x.parse(sheet, skiprows=i)
+        return x.parse(x.sheet_names[0])
+    except:
         return None
 
-def load_and_process_files(uploaded_files):
-    dfs = []
-
-    for uploaded_file in uploaded_files:
-        df = extract_df_from_excel(uploaded_file)
-        if df is not None:
-            # Extract month from file name
-            month_name = uploaded_file.name.split(" ")[-1].split(".")[0].replace(".", "")
-            df['MONTH'] = month_name
-
-            df = fix_duplicate_columns(df)
-            df = standardize_columns(df)
-
-            # Convert DATE to datetime
-            if 'DATE' in df.columns:
-                df['DATE'] = pd.to_datetime(df['DATE'], errors='coerce')
-
-            for col in df.columns:
-                if col != 'DATE' and df[col].dtype == 'object':
-                    df[col] = pd.to_numeric(df[col], errors='coerce')
-
-            dfs.append(df)
-
-    if dfs:
-        combined_df = pd.concat(dfs, ignore_index=True)
-        numeric_cols = combined_df.select_dtypes(include=['float64', 'int64']).columns.tolist()
-        return combined_df, numeric_cols
-    else:
-        return pd.DataFrame(), []
-
-# === Core Analysis Functions ===
+def load_and_process_files(files):
+    df_list = []
+    for f in files:
+        d = extract_df_from_excel(f)
+        if d is None: continue
+        m = f.name.rsplit(" ",1)[-1].split(".")[0]
+        d["MONTH"] = m
+        d = fix_duplicate_columns(d)
+        d = standardize_columns(d)
+        if "DATE" in d:
+            d["DATE"] = pd.to_datetime(d["DATE"], errors="coerce")
+        for c in d.columns:
+            if c!="DATE":
+                d[c] = pd.to_numeric(d[c], errors="coerce")
+        df_list.append(d)
+    if not df_list: return pd.DataFrame(), []
+    df = pd.concat(df_list, ignore_index=True)
+    num = df.select_dtypes(include=np.number).columns.tolist()
+    return df, num
 
 def detect_anomalies(df, numeric_cols):
+    df = df.copy()
     iso = IsolationForest(contamination=0.05, random_state=42)
-    df['ANOMALY'] = iso.fit_predict(df[numeric_cols].fillna(0))
-    return df[df['ANOMALY'] == -1]
+    df["ANOMALY"] = iso.fit_predict(df[numeric_cols].fillna(0))
+    return df[df["ANOMALY"]==-1]
 
 def run_classifier(df):
-    if 'TOTAL_UNIT_(UPPCL+DG)' not in df.columns:
-        return "TOTAL_UNIT_(UPPCL+DG) column not found."
-
-    median = df['TOTAL_UNIT_(UPPCL+DG)'].median()
-    y = (df['TOTAL_UNIT_(UPPCL+DG)'] > median).astype(int)
-
-    X = df.select_dtypes(include=np.number).drop(columns=['TOTAL_UNIT_(UPPCL+DG)'], errors='ignore')
+    if "TOTAL_UNIT_(UPPCL+DG)" not in df:
+        return "Column missing"
+    y = (df["TOTAL_UNIT_(UPPCL+DG)"] > df["TOTAL_UNIT_(UPPCL+DG)"].median()).astype(int)
+    X = df.select_dtypes(include=np.number).drop(columns=["TOTAL_UNIT_(UPPCL+DG)"])
     X = X.fillna(X.mean())
-
-    model = LogisticRegression()
-    model.fit(X, y)
-    preds = model.predict(X)
-    return classification_report(y, preds)
+    m = LogisticRegression(max_iter=1000)
+    m.fit(X,y)
+    return classification_report(y, m.predict(X))
 
 def analyze_downtime(df):
-    if 'PRODUCTION' not in df.columns or 'TOTAL_UNIT_(UPPCL+DG)' not in df.columns:
-        return "Required columns not found."
-    low_prod = df[df['PRODUCTION'] < df['PRODUCTION'].mean() * 0.5]
-    low_energy = df[df['TOTAL_UNIT_(UPPCL+DG)'] < df['TOTAL_UNIT_(UPPCL+DG)'].mean() * 0.5]
-    return f"Low Production Days: {len(low_prod)}\nLow Energy Days: {len(low_energy)}"
+    if "PRODUCTION" not in df or "TOTAL_UNIT_(UPPCL+DG)" not in df:
+        return "Required columns missing"
+    p, t = df["PRODUCTION"], df["TOTAL_UNIT_(UPPCL+DG)"]
+    return f"Low Prod Days: {(p<p.mean()*0.5).sum()}\nLow Energy Days: {(t<t.mean()*0.5).sum()}"
 
 def analyze_correlation(df, numeric_cols):
     return df[numeric_cols].corr().round(2)
 
-# === EDA Summary Function ===
-
 def summarize_eda(df):
-    eda_summary = ""
-
-    # General info
-    eda_summary += f"**Rows:** {df.shape[0]}\n\n"
-    eda_summary += f"**Columns:** {df.shape[1]}\n\n"
-    eda_summary += "**Missing Values (Top 10):**\n"
-    eda_summary += df.isnull().sum().sort_values(ascending=False).head(10).to_string()
-    eda_summary += "\n\n"
-
-    # Dtypes
-    eda_summary += "**Column Types:**\n"
-    eda_summary += df.dtypes.value_counts().to_string()
-    eda_summary += "\n\n"
-
-    # Numeric summary
-    num_cols = df.select_dtypes(include='number').columns.tolist()
-    if num_cols:
-        desc = df[num_cols].describe().T
-        eda_summary += "**Numeric Summary:**\n"
-        eda_summary += desc[['mean', 'std', 'min', 'max']].round(2).to_string()
-        eda_summary += "\n\n"
-
-    # Top categorical values
-    cat_cols = df.select_dtypes(include='object').columns.tolist()
-    for col in cat_cols[:3]:
-        top_vals = df[col].value_counts().head(3)
-        eda_summary += f"**Top values in `{col}`:**\n{top_vals.to_string()}\n\n"
-
-    return eda_summary
-
-# === Monthly Analysis ===
+    txt = f"Rows: {df.shape[0]}, Columns: {df.shape[1]}\n"
+    miss = df.isnull().sum().sort_values(ascending=False).head(5)
+    txt += "Missing (top 5):\n" + miss.to_string() + "\n"
+    txt += "Numeric summary:\n" + df.select_dtypes(include=np.number).describe().T[["mean","std","min","max"]].round(2).to_string()
+    return txt
 
 def generate_monthly_insights(df, numeric_cols):
-    months = df['MONTH'].unique()
-    for month in sorted(months):
-        st.subheader(f"📅 Month: {month}")
-        month_df = df[df['MONTH'] == month]
-        st.dataframe(month_df[numeric_cols].describe().T)
+    for m in sorted(df["MONTH"].unique()):
+        st.subheader(f"🔹 Month: {m}")
+        st.dataframe(df[df["MONTH"]==m][numeric_cols].describe().round(2).T)

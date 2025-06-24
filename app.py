@@ -1,5 +1,6 @@
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 import plotly.express as px
 
 from data_utils import (
@@ -16,148 +17,135 @@ from gpt_utils import generate_section_insight
 from insights_export import download_report_button
 from advanced_modules import run_kmeans_visualization
 
-st.set_page_config(layout="wide", page_title="Energy Dashboard - Subros")
-st.title("⚡ Subros Energy Analysis Dashboard")
+st.set_page_config(layout="wide", page_title="Energy Dashboard")
+st.title("⚡ Energy Dashboard")
 
-uploaded_files = st.file_uploader("📁 Upload Excel files (Jan–May 2025)", type='xlsx', accept_multiple_files=True)
+uploaded = st.file_uploader("Upload Excel files (multiple)", type="xlsx", accept_multiple_files=True)
+if not uploaded:
+    st.info("📥 Upload files to begin.")
+    st.stop()
 
-if uploaded_files:
-    with st.spinner("📊 Processing uploaded files..."):
-        df, numeric_cols = load_and_process_files(uploaded_files)
-        st.success(f"✅ Loaded {len(uploaded_files)} file(s) successfully.")
+with st.spinner("Processing..."):
+    df, numeric_cols = load_and_process_files(uploaded)
+    st.success(f"Loaded {len(uploaded)} file(s).")
 
-    # Sidebar options
-    st.sidebar.header("📊 Chart Toggle Options")
-    show_summary = st.sidebar.checkbox("Show Summary Stats", True)
-    show_energy = st.sidebar.checkbox("Show Energy KPIs", True)
-    show_chart = st.sidebar.checkbox("Energy Trend Chart", True)
-    show_forecast = st.sidebar.checkbox("Forecast Next 7 Days", True)
-    show_anomalies = st.sidebar.checkbox("Anomaly Detection", True)
-    show_classifier = st.sidebar.checkbox("High Usage Classifier", False)
-    show_loadfactor = st.sidebar.checkbox("Load Factor & Downtime", True)
-    show_correlation = st.sidebar.checkbox("Cross-Section Correlation", True)
-    show_decomposition = st.sidebar.checkbox("Time Series Decomposition", True)
-    show_eda = st.sidebar.checkbox("Run Exploratory Data Analysis", True)
-    show_kmeans = st.sidebar.checkbox("KMeans Clustering", True)
+# Sidebar toggles
+toggles = {
+    "Summary": True,
+    "KPIs": True,
+    "Trend": True,
+    "Forecast": True,
+    "Decomposition": True,
+    "Anomalies": True,
+    "Classifier": False,
+    "Downtime": True,
+    "Correlation": True,
+    "EDA": True,
+    "KMeans": True
+}
+for t in toggles:
+    toggles[t] = st.sidebar.checkbox(f"Show {t}", value=toggles[t])
 
-    all_insights = []
+insights = []
 
-    if show_summary:
-        st.subheader("📈 Summary Statistics")
-        summary_stats = df[numeric_cols].describe()
-        st.write(summary_stats)
-        insight = generate_section_insight("Summary Statistics", summary_stats.to_string())
-        st.markdown("**📝 Summary:** " + insight)
-        all_insights.append(("Summary Statistics", insight))
+if toggles["Summary"]:
+    st.subheader("📈 Summary Statistics")
+    summary = df[numeric_cols].describe()
+    st.write(summary)
+    insight = generate_section_insight("Summary Statistics", summary.to_string())
+    st.markdown("**📝 Key insights:** " + insight)
+    insights.append(("Summary Statistics", insight))
 
-    if show_energy:
-        st.subheader("📍 Key Energy KPIs")
-        df['DG_UNIT'] = pd.to_numeric(df['DG_UNIT'], errors='coerce')
-        df['TOTAL_UNIT_(UPPCL+DG)'] = pd.to_numeric(df['TOTAL_UNIT_(UPPCL+DG)'], errors='coerce')
-        if 'DG_UNIT' in df.columns and 'TOTAL_UNIT_(UPPCL+DG)' in df.columns:
-            total = df['TOTAL_UNIT_(UPPCL+DG)'].sum()
-            dg = df['DG_UNIT'].sum()
-            share = (dg / total) * 100 if total else 0
-            st.metric("DG Share %", f"{share:.2f}%")
-            insight = generate_section_insight("Energy KPIs", f"DG Share: {share:.2f}%")
-            st.markdown("**📝 Summary:** " + insight)
-            all_insights.append(("Energy KPIs", insight))
-        else:
-            st.warning("Required energy columns not found.")
-
-    if show_chart:
-        st.subheader("📊 Daily Energy Trend")
-        fig = px.line(df, x='DATE', y='TOTAL_UNIT_(UPPCL+DG)', color='MONTH', title="Daily Energy Consumption")
-        st.plotly_chart(fig, use_container_width=True)
-        insight = generate_section_insight("Energy Trend", "Line chart showing daily TOTAL_UNIT_(UPPCL+DG)")
-        st.markdown("**📝 Summary:** " + insight)
-        all_insights.append(("Energy Trend", insight))
-
-    if show_forecast:
-        st.subheader("🔮 ARIMA Forecast (7 Days)")
-        forecast_fig, forecast_values = generate_forecast(df)
-        if forecast_fig:
-            st.plotly_chart(forecast_fig, use_container_width=True)
-            insight = generate_section_insight("Forecast", str(forecast_values))
-            st.markdown("**📝 Summary:** " + insight)
-            all_insights.append(("Forecast", insight))
-        else:
-            st.warning("Forecasting failed.")
-
-    if show_decomposition:
-        st.subheader("🧪 Time Series Decomposition")
-        decompose_fig = decompose_and_plot(df)
-        if decompose_fig:
-            st.plotly_chart(decompose_fig, use_container_width=True)
-            insight = generate_section_insight("Time Series Decomposition", "Trend/Seasonality plotted")
-            st.markdown("**📝 Summary:** " + insight)
-            all_insights.append(("Decomposition", insight))
-
-    if show_anomalies:
-        st.subheader("🕵️ Anomaly Detection")
-        anomalies_df = detect_anomalies(df, numeric_cols)
-        st.write(anomalies_df[['DATE'] + numeric_cols[:5]])
-        insight = generate_section_insight("Anomalies", anomalies_df.head().to_string())
-        st.markdown("**📝 Summary:** " + insight)
-        all_insights.append(("Anomaly Detection", insight))
-
-    if show_classifier:
-        st.subheader("⚠️ High Usage Classifier")
-        clf_report = run_classifier(df)
-        st.text(clf_report)
-        insight = generate_section_insight("High Usage Classifier", clf_report)
-        st.markdown("**📝 Summary:** " + insight)
-        all_insights.append(("Classifier", insight))
-
-    if show_loadfactor:
-        st.subheader("📉 Load Factor & Downtime")
-        downtime = analyze_downtime(df)
-        st.text(downtime)
-        insight = generate_section_insight("Load Factor & Downtime", downtime)
-        st.markdown("**📝 Summary:** " + insight)
-        all_insights.append(("Downtime", insight))
-
-    if show_correlation:
-        st.subheader("📊 Correlation Analysis")
-        corr_df = analyze_correlation(df, numeric_cols)
-        st.dataframe(corr_df)
-        fig = px.imshow(corr_df, text_auto=True, aspect="auto", title="Correlation Heatmap")
-        st.plotly_chart(fig, use_container_width=True)
-        insight = generate_section_insight("Correlation", corr_df.to_string())
-        st.markdown("**📝 Summary:** " + insight)
-        all_insights.append(("Correlation", insight))
-
-    if show_eda:
-        st.subheader("📊 Exploratory Data Analysis (EDA)")
-        with st.expander("📈 Descriptive Statistics"):
-            st.dataframe(df[numeric_cols].describe().T)
-
-        with st.expander("📊 Monthly Trend Summary"):
-            for month in sorted(df['MONTH'].unique()):
-                month_df = df[df['MONTH'] == month]
-                st.markdown(f"### 🔹 {month}")
-                st.dataframe(month_df[numeric_cols].describe().T)
-
-        with st.expander("🧠 EDA Summary Text"):
-            eda_text = summarize_eda(df)
-            st.text(eda_text)
-
-        insight = generate_section_insight("EDA", "Exploratory analysis of the dataset")
-        st.markdown("**📝 Summary:** " + insight)
-        all_insights.append(("EDA", insight))
-
-    view_option = st.radio("Choose Analysis View", ["Overall", "Monthly"], horizontal=True)
-    if view_option == "Overall":
-        st.subheader("📊 Overall Analysis")
-        st.dataframe(df[numeric_cols].describe().T)
+if toggles["KPIs"]:
+    st.subheader("🎯 Energy KPIs")
+    df["DG_UNIT"] = pd.to_numeric(df.get("DG_UNIT", pd.Series()), errors="coerce")
+    df["TOTAL_UNIT_(UPPCL+DG)"] = pd.to_numeric(df.get("TOTAL_UNIT_(UPPCL+DG)", pd.Series()), errors="coerce")
+    if "DG_UNIT" in df and "TOTAL_UNIT_(UPPCL+DG)" in df:
+        total, dg = df["TOTAL_UNIT_(UPPCL+DG)"].sum(), df["DG_UNIT"].sum()
+        share = 100*dg/total if total else 0
+        st.metric("DG Share %", f"{share:.2f}%")
+        insight = generate_section_insight("Energy KPIs", f"DG Share: {share:.2f}%")
+        st.markdown("**📝 Key insights:** " + insight)
+        insights.append(("Energy KPIs", insight))
     else:
-        st.subheader("📆 Monthly Analysis")
+        st.warning("Missing DG_UNIT or TOTAL_UNIT_(UPPCL+DG)")
+
+if toggles["Trend"]:
+    st.subheader("📊 Daily Trend")
+    fig = px.line(df, x="DATE", y="TOTAL_UNIT_(UPPCL+DG)", color="MONTH")
+    st.plotly_chart(fig, use_container_width=True)
+    insight = generate_section_insight("Trend", "Daily energy consumption trend")
+    st.markdown("**📝 Key insights:** " + insight)
+    insights.append(("Trend", insight))
+
+if toggles["Forecast"]:
+    st.subheader("🔮 7‑Day Forecast")
+    fig, vals = generate_forecast(df)
+    if fig:
+        st.plotly_chart(fig, use_container_width=True)
+        insight = generate_section_insight("Forecast", vals.to_string())
+        st.markdown("**📝 Key insights:** " + insight)
+        insights.append(("Forecast", insight))
+    else:
+        st.warning("Forecast failed.")
+
+if toggles["Decomposition"]:
+    st.subheader("🧪 Decomposition")
+    fig = decompose_and_plot(df)
+    if fig:
+        st.plotly_chart(fig, use_container_width=True)
+        insight = generate_section_insight("Decomposition", "Trend/Seasonal/Residual plot")
+        st.markdown("**📝 Key insights:** " + insight)
+        insights.append(("Decomposition", insight))
+    else:
+        st.warning("Decomposition failed.")
+
+if toggles["Anomalies"]:
+    st.subheader("🚨 Anomaly Detection")
+    ann = detect_anomalies(df, numeric_cols)
+    st.write(ann[["DATE"] + numeric_cols[:5]])
+    insight = generate_section_insight("Anomalies", ann.head().to_string())
+    st.markdown("**📝 Key insights:** " + insight)
+    insights.append(("Anomalies", insight))
+
+if toggles["Classifier"]:
+    st.subheader("⚠️ High Usage Classifier")
+    report = run_classifier(df)
+    st.text(report)
+    insight = generate_section_insight("Classifier", report)
+    st.markdown("**📝 Key insights:** " + insight)
+    insights.append(("Classifier", insight))
+
+if toggles["Downtime"]:
+    st.subheader("📉 Downtime Summary")
+    downtime = analyze_downtime(df)
+    st.text(downtime)
+    insight = generate_section_insight("Downtime", downtime)
+    st.markdown("**📝 Key insights:** " + insight)
+    insights.append(("Downtime", insight))
+
+if toggles["Correlation"]:
+    st.subheader("📊 Correlation Heatmap")
+    corr = analyze_correlation(df, numeric_cols)
+    st.dataframe(corr)
+    fig = px.imshow(corr, text_auto=True)
+    st.plotly_chart(fig, use_container_width=True)
+    insight = generate_section_insight("Correlation", corr.to_string())
+    st.markdown("**📝 Key insights:** " + insight)
+    insights.append(("Correlation", insight))
+
+if toggles["EDA"]:
+    st.subheader("🔍 Exploratory Data Analysis")
+    st.text(summarize_eda(df))
+    monthly = st.checkbox("Include monthly breakdown in EDA", value=True)
+    if monthly:
         generate_monthly_insights(df, numeric_cols)
 
-    if show_kmeans:
-        run_kmeans_visualization(df, numeric_cols)
+    insight = generate_section_insight("EDA", "EDA summary")
+    st.markdown("**📝 Key insights:** " + insight)
+    insights.append(("EDA", insight))
 
-    download_report_button(all_insights)
+if toggles["KMeans"]:
+    run_kmeans_visualization(df, numeric_cols)
 
-else:
-    st.info("📥 Please upload Excel file(s) to begin analysis.")
+download_report_button(insights)
